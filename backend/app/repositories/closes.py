@@ -20,8 +20,9 @@ def create_batch(conn: sqlite3.Connection, **fields: Any) -> int:
     cur = conn.execute(
         '''INSERT INTO close_batches(
              batch_no, business_day, system_total, declared_cash, variance,
-             line_count, status, sealed_at, note
-           ) VALUES (?,?,?,?,?,?,?,?,?)''',
+             line_count, status, sealed_at, note,
+             late_count, late_total, cutoff_time, cutoff_policy
+           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
         (
             fields["batch_no"],
             fields["business_day"],
@@ -32,6 +33,10 @@ def create_batch(conn: sqlite3.Connection, **fields: Any) -> int:
             fields["status"],
             fields["sealed_at"],
             fields.get("note"),
+            int(fields.get("late_count", 0)),
+            float(fields.get("late_total", 0.0)),
+            fields.get("cutoff_time"),
+            fields.get("cutoff_policy"),
         ),
     )
     return int(cur.lastrowid)

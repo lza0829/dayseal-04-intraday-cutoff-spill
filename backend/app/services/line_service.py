@@ -6,6 +6,7 @@ from app.db import connect
 from app.repositories import closes as close_repo
 from app.repositories import lines as line_repo
 from app.repositories import settings as settings_repo
+from app.services import cutoff_service
 
 
 def _now() -> str:
@@ -23,22 +24,30 @@ def list_lines(business_day: str | None = None) -> list[dict[str, Any]]:
 def create_line(body: dict[str, Any]) -> dict[str, Any]:
     conn = connect(immediate=True)
     try:
-        day = body.get("business_day") or settings_repo.get(conn, "business_day")
-        if not day:
+        base_day = body.get("business_day") or settings_repo.get(conn, "business_day")
+        if not base_day:
             raise HTTPException(400, "未设置营业日")
+        created = _now()
+        occurred_at = body.get("occurred_at") or created
+        # 归集唯一入口：cutoff 配置、落库 business_day、late_flag 同源。
+        try:
+            attr = cutoff_service.attribute(conn, base_day, occurred_at)
+        except ValueError as exc:
+            raise HTTPException(400, f"occurred_at 时间格式非法：{occurred_at}") from exc
+        day = attr["business_day"]
         if close_repo.is_sealed(conn, day):
             raise HTTPException(409, f"营业日 {day} 已封账，禁止新增流水")
-        created = _now()
         lid = line_repo.insert_line(
             conn,
             line_no=line_repo.next_line_no(conn),
             till_code=body["till_code"],
             business_day=day,
-            occurred_at=body.get("occurred_at") or created,
+            occurred_at=occurred_at,
             amount=float(body["amount"]),
             pay_method=body.get("pay_method") or "现金",
             note=body.get("note"),
             created_at=created,
+            late_flag=attr["late_flag"],
         )
         conn.commit()
         return line_repo.get_line(conn, lid)  # type: ignore

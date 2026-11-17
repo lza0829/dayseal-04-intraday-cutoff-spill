@@ -22,6 +22,16 @@ def day_total(conn: sqlite3.Connection, business_day: str) -> tuple[float, int]:
     return float(row["s"]), int(row["c"])
 
 
+def late_total(conn: sqlite3.Connection, business_day: str) -> tuple[float, int]:
+    """当日封账口径内的晚到行合计（仅 mark_late 策略会产生 late_flag=1 的行）。"""
+    row = conn.execute(
+        "SELECT COALESCE(SUM(amount),0) s, COUNT(*) c FROM cash_lines "
+        "WHERE business_day=? AND late_flag=1",
+        (business_day,),
+    ).fetchone()
+    return float(row["s"]), int(row["c"])
+
+
 def next_line_no(conn: sqlite3.Connection) -> str:
     n = conn.execute("SELECT COUNT(*) c FROM cash_lines").fetchone()["c"] + 1
     return f"CL-{n:04d}"
@@ -29,8 +39,8 @@ def next_line_no(conn: sqlite3.Connection) -> str:
 
 def insert_line(conn: sqlite3.Connection, **fields: Any) -> int:
     cur = conn.execute(
-        '''INSERT INTO cash_lines(line_no, till_code, business_day, occurred_at, amount, pay_method, note, created_at)
-           VALUES (?,?,?,?,?,?,?,?)''',
+        '''INSERT INTO cash_lines(line_no, till_code, business_day, occurred_at, amount, pay_method, note, created_at, late_flag)
+           VALUES (?,?,?,?,?,?,?,?,?)''',
         (
             fields["line_no"],
             fields["till_code"],
@@ -40,6 +50,7 @@ def insert_line(conn: sqlite3.Connection, **fields: Any) -> int:
             fields["pay_method"],
             fields.get("note"),
             fields["created_at"],
+            int(fields.get("late_flag", 0)),
         ),
     )
     return int(cur.lastrowid)

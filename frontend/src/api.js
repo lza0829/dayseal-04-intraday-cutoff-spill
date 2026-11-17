@@ -26,4 +26,6 @@ export const api = {
   variances: () => req('/api/close/variances'),
   getDay: () => req('/api/settings/business-day'),
   setDay: (business_day) => req('/api/settings/business-day', { method: 'PUT', body: JSON.stringify({ business_day }) }),
+  getCutoff: () => req('/api/settings/cutoff'),
+  setCutoff: (body) => req('/api/settings/cutoff', { method: 'PUT', body: JSON.stringify(body) }),
 }

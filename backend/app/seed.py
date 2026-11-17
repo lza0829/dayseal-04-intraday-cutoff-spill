@@ -1,5 +1,6 @@
 from __future__ import annotations
 from app.db import connect
+from app.services.cutoff_service import DEFAULT_CUTOFF_TIME, POLICY_ROLL
 
 
 SCHEMA = '''
@@ -21,7 +22,8 @@ CREATE TABLE IF NOT EXISTS cash_lines (
   amount REAL NOT NULL,
   pay_method TEXT NOT NULL,
   note TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  late_flag INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS close_batches (
   id INTEGER PRIMARY KEY,
@@ -33,7 +35,11 @@ CREATE TABLE IF NOT EXISTS close_batches (
   line_count INTEGER NOT NULL,
   status TEXT NOT NULL,
   sealed_at TEXT NOT NULL,
-  note TEXT
+  note TEXT,
+  late_count INTEGER NOT NULL DEFAULT 0,
+  late_total REAL NOT NULL DEFAULT 0,
+  cutoff_time TEXT,
+  cutoff_policy TEXT
 );
 CREATE TABLE IF NOT EXISTS variance_rows (
   id INTEGER PRIMARY KEY,
@@ -55,15 +61,46 @@ CREATE TABLE IF NOT EXISTS reopen_requests (
 );
 '''
 
+# 既有库的轻量迁移：CREATE TABLE IF NOT EXISTS 不会给旧表补列。
+MIGRATIONS = (
+    "ALTER TABLE cash_lines ADD COLUMN late_flag INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE close_batches ADD COLUMN late_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE close_batches ADD COLUMN late_total REAL NOT NULL DEFAULT 0",
+    "ALTER TABLE close_batches ADD COLUMN cutoff_time TEXT",
+    "ALTER TABLE close_batches ADD COLUMN cutoff_policy TEXT",
+)
+
+
+def _migrate(conn) -> None:
+    existing = {r["name"] for r in conn.execute("PRAGMA table_info(cash_lines)").fetchall()}
+    if "late_flag" not in existing:
+        conn.execute(MIGRATIONS[0])
+    existing = {r["name"] for r in conn.execute("PRAGMA table_info(close_batches)").fetchall()}
+    for ddl, column in (
+        (MIGRATIONS[1], "late_count"),
+        (MIGRATIONS[2], "late_total"),
+        (MIGRATIONS[3], "cutoff_time"),
+        (MIGRATIONS[4], "cutoff_policy"),
+    ):
+        if column not in existing:
+            conn.execute(ddl)
+
 
 def seed_if_empty() -> None:
     conn = connect()
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         n = conn.execute("SELECT COUNT(*) c FROM tills").fetchone()["c"]
         if n:
             return
         conn.execute("INSERT INTO settings(key, value) VALUES ('business_day', ?)", ("2026-11-16",))
+        conn.execute(
+            "INSERT INTO settings(key, value) VALUES ('cutoff_time', ?)", (DEFAULT_CUTOFF_TIME,)
+        )
+        conn.execute(
+            "INSERT INTO settings(key, value) VALUES ('cutoff_policy', ?)", (POLICY_ROLL,)
+        )
         tills = [
             ("TILL-A", "一号收银"),
             ("TILL-B", "二号收银"),

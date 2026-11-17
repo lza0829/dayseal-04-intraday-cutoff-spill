@@ -12,3 +12,13 @@ def get_day():
 @router.put("/business-day")
 def set_day(body: dict = Body(...)):
     return svc.set_day(body)
+
+
+@router.get("/cutoff")
+def get_cutoff():
+    return svc.get_cutoff()
+
+
+@router.put("/cutoff")
+def set_cutoff(body: dict = Body(...)):
+    return svc.set_cutoff(body)
